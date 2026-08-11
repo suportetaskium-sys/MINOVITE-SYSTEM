@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d3b2f" />
+  <meta name="description" content="Ferramenta interna de atendimento MINOVITE" />
+  <title>MINOVITE | Central de Atendimento</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div class="hero-inner">
+        <div class="brand-mark" aria-hidden="true">M</div>
+        <div class="hero-copy">
+          <span class="product-pill">MINOVITE · OPERAÇÃO INTERNA</span>
+          <h1>Central de Atendimento e Confirmação</h1>
+          <p>Consulta de endereço, previsão operacional de entrega e confirmação de compra em uma única tela.</p>
+        </div>
+        <nav class="quick-nav" aria-label="Atalhos">
+          <a href="#endereco">Endereço</a>
+          <a href="#declaracao">Declaração</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div class="notice-banner">
+        <strong>Fluxo rápido:</strong> consulte o CEP → complete número/complemento → copie a confirmação → gere a declaração de compra.
+      </div>
+
+      <section class="tool-card" id="endereco">
+        <div class="card-heading">
+          <div class="step-badge">1</div>
+          <div>
+            <p class="eyebrow">Logística e confirmação</p>
+            <h2>CEP, endereço e previsão de entrega</h2>
+            <p>Consulte o CEP, complete os dados e gere a mensagem pronta para o WhatsApp.</p>
+          </div>
+        </div>
+
+        <div class="form-grid two-columns">
+          <label class="field">
+            <span>Nome do cliente</span>
+            <input id="customerName" placeholder="Ex.: Maria da Silva" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Data do pedido</span>
+            <input id="orderDate" type="date" />
+          </label>
+        </div>
+
+        <div class="cep-row">
+          <label class="field cep-field">
+            <span>CEP de destino</span>
+            <input id="cep" inputmode="numeric" placeholder="00000-000" maxlength="9" />
+          </label>
+          <button class="button button-primary lookup-button" id="lookupCep" type="button">Consultar CEP</button>
+          <button class="button button-ghost lookup-button" id="manualMode" type="button">Preencher manualmente</button>
+        </div>
+
+        <div id="addressError" class="alert alert-error hidden" role="alert"></div>
+
+        <div id="addressPanel" class="address-panel hidden">
+          <div class="form-grid two-columns">
+            <label class="field field-wide">
+              <span>Rua / logradouro</span>
+              <input id="street" placeholder="Rua, avenida, travessa..." />
+            </label>
+            <label class="field">
+              <span>Número *</span>
+              <input id="number" placeholder="Ex.: 120" />
+            </label>
+            <label class="field">
+              <span>Complemento</span>
+              <input id="complement" placeholder="Casa, apto, bloco..." />
+            </label>
+            <label class="field">
+              <span>Bairro</span>
+              <input id="neighborhood" placeholder="Bairro" />
+            </label>
+            <label class="field">
+              <span>Cidade</span>
+              <input id="city" placeholder="Cidade" />
+            </label>
+            <label class="field">
+              <span>UF</span>
+              <input id="uf" placeholder="SP" maxlength="2" />
+            </label>
+            <label class="field field-wide">
+              <span>Ponto de referência</span>
+              <input id="reference" placeholder="Ex.: próximo ao mercado..." />
+            </label>
+          </div>
+          <button class="button button-secondary hidden" id="manualCalculate" type="button">Calcular prazo pelo endereço</button>
+        </div>
+
+        <div id="estimateBox" class="estimate-box hidden">
+          <div>
+            <span class="estimate-label">Prazo operacional estimado</span>
+            <strong id="estimateDays"></strong>
+            <small id="postingDays"></small>
+          </div>
+          <div>
+            <span class="estimate-label">Janela aproximada</span>
+            <strong id="estimateWindow"></strong>
+            <small>Origem fixa: 04948-970 · São Paulo/SP</small>
+          </div>
+          <p class="estimate-disclaimer" id="estimateDisclaimer"></p>
+        </div>
+
+        <div id="addressOutputs" class="output-stack hidden">
+          <div class="output-box">
+            <div class="output-title"><span>Endereço formatado</span><span class="status-dot">Pronto</span></div>
+            <pre id="formattedAddress"></pre>
+            <div class="action-row">
+              <button class="button button-primary" data-copy-target="formattedAddress" type="button">Copiar endereço</button>
+            </div>
+          </div>
+          <div class="output-box emphasis">
+            <div class="output-title"><span>Confirmação de endereço</span><span class="status-dot">WhatsApp</span></div>
+            <pre id="addressConfirmation"></pre>
+            <div class="action-row">
+              <button class="button button-primary" data-copy-target="addressConfirmation" type="button">Copiar confirmação</button>
+              <button class="button button-whatsapp" data-whatsapp-target="addressConfirmation" type="button">Abrir no WhatsApp</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-footer-actions">
+          <button class="text-button" id="resetAddress" type="button">Limpar ferramenta</button>
+        </div>
+      </section>
+
+      <section class="tool-card" id="declaracao">
+        <div class="card-heading">
+          <div class="step-badge">2</div>
+          <div>
+            <p class="eyebrow">Fechamento do pedido</p>
+            <h2>Declaração de confirmação de compra</h2>
+            <p>Valide nome e CPF e gere a declaração pronta para envio ao cliente.</p>
+          </div>
+        </div>
+
+        <div class="form-grid two-columns">
+          <label class="field field-wide">
+            <span>Nome completo *</span>
+            <input id="buyerName" placeholder="Nome completo do cliente" autocomplete="off" />
+            <small id="nameError" class="field-error hidden">Informe o nome completo.</small>
+          </label>
+          <label class="field">
+            <span>CPF *</span>
+            <input id="cpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" />
+            <small id="cpfError" class="field-error hidden">CPF inválido. Confira os 11 dígitos.</small>
+          </label>
+          <label class="field">
+            <span>Valor do pedido *</span>
+            <input id="amount" inputmode="numeric" placeholder="R$ 0,00" />
+            <small id="amountError" class="field-error hidden">Informe o valor do pedido.</small>
+          </label>
+        </div>
+
+        <div class="check-row">
+          <span><strong>Advertência obrigatória:</strong> multa de 10%, juros de 1% ao mês, correção pelo IGPM-FGV e honorários advocatícios de 20% serão incluídos automaticamente na declaração.</span>
+        </div>
+
+        <div id="declarationEmpty" class="empty-output">Preencha nome, CPF e valor do pedido para liberar a declaração.</div>
+
+        <div id="declarationOutput" class="output-box emphasis declaration-output hidden">
+          <div class="output-title"><span>Declaração pronta</span><span class="status-dot">MINOVITE</span></div>
+          <pre id="declarationText"></pre>
+          <div class="action-row">
+            <button class="button button-primary" data-copy-target="declarationText" type="button">Copiar declaração</button>
+            <button class="button button-whatsapp" data-whatsapp-target="declarationText" type="button">Abrir no WhatsApp</button>
+          </div>
+        </div>
+
+        <div class="card-footer-actions">
+          <button class="text-button" id="resetDeclaration" type="button">Limpar ferramenta</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div><strong>MINOVITE</strong><span>Ferramenta interna de atendimento</span></div>
+      <p>Os dados digitados não são armazenados por esta aplicação. A consulta de CEP utiliza ViaCEP. O prazo exibido é uma estimativa interna.</p>
+    </footer>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
