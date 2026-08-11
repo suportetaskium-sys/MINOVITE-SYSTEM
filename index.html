@@ -1,0 +1,93 @@
+const $ = (id) => document.getElementById(id);
+const state = { estimate: null, manual: false };
+
+function onlyDigits(value = '') { return String(value).replace(/\D/g, ''); }
+function formatCep(value = '') { const d = onlyDigits(value).slice(0, 8); return d.length > 5 ? `${d.slice(0,5)}-${d.slice(5)}` : d; }
+function formatCpf(value = '') {
+  const d = onlyDigits(value).slice(0, 11);
+  return d.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d)/,'.$1-$2');
+}
+function validCpf(value='') {
+  const cpf=onlyDigits(value); if(cpf.length!==11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const calc=(base,factor)=>{let total=0;for(const digit of base) total+=Number(digit)*factor--; const mod=(total*10)%11; return mod===10?0:mod;};
+  return calc(cpf.slice(0,9),10)===Number(cpf[9]) && calc(cpf.slice(0,10),11)===Number(cpf[10]);
+}
+function titleCase(value='') { return value.trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR').replace(/(^|[\s'-])([\p{L}])/gu,(_,s,l)=>s+l.toLocaleUpperCase('pt-BR')); }
+function todayIso(){ const n=new Date(); return new Date(n.getTime()-n.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+function dateBr(iso){ return iso ? new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC'}).format(new Date(`${iso}T12:00:00Z`)) : ''; }
+function moneyMask(value=''){ const d=onlyDigits(value); if(!d) return ''; return (Number(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+
+let toastTimer;
+function toast(message){ clearTimeout(toastTimer); $('toast').textContent=message; $('toast').classList.remove('hidden'); toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3200); }
+function setError(message=''){ $('addressError').textContent=message; $('addressError').classList.toggle('hidden',!message); }
+function setLoading(loading){ $('lookupCep').disabled=loading; $('manualCalculate').disabled=loading; $('lookupCep').textContent=loading?'Consultando...':'Consultar CEP'; }
+
+async function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return; }
+  const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();document.execCommand('copy');area.remove();
+}
+
+function addressData(){ return {cep:$('cep').value,street:$('street').value.trim(),number:$('number').value.trim(),complement:$('complement').value.trim(),neighborhood:$('neighborhood').value.trim(),city:$('city').value.trim(),uf:$('uf').value.trim().toUpperCase(),reference:$('reference').value.trim()}; }
+function formattedAddress(){
+  const a=addressData(); if(!a.street || !a.city || !a.uf) return '';
+  const line1=`${a.street}${a.number?`, nº ${a.number}`:''}`;
+  const line2=[a.neighborhood,`${a.city}/${a.uf}`].filter(Boolean).join(' - ');
+  return [line1,line2,`CEP: ${formatCep(a.cep)}`,a.complement&&`Complemento: ${a.complement}`,a.reference&&`Referência: ${a.reference}`].filter(Boolean).join('\n');
+}
+function renderAddressOutputs(){
+  const formatted=formattedAddress(); const visible=Boolean(formatted); $('addressOutputs').classList.toggle('hidden',!visible); if(!visible)return;
+  $('formattedAddress').textContent=formatted;
+  const name=$('customerName').value.trim(); const person=name?`, ${titleCase(name)}`:'';
+  const prazo=state.estimate?`\n\n📦 Previsão estimada: ${state.estimate.minBusinessDays} a ${state.estimate.maxBusinessDays} dias úteis após a postagem, com janela aproximada de ${dateBr(state.estimate.earliestDate)} a ${dateBr(state.estimate.latestDate)}.`:'';
+  $('addressConfirmation').textContent=`Olá${person}! Para evitar qualquer erro na entrega do seu MINOVITE, confirma por favor se os dados abaixo estão corretos?\n\n${formatted}${prazo}\n\nSe estiver tudo certo, responda: "CONFIRMO O ENDEREÇO".`;
+}
+function renderEstimate(estimate){
+  state.estimate=estimate; $('estimateBox').classList.toggle('hidden',!estimate); if(!estimate){renderAddressOutputs();return;}
+  $('estimateDays').textContent=`${estimate.minBusinessDays} a ${estimate.maxBusinessDays} dias úteis`;
+  $('postingDays').textContent=`Postagem considerada em até ${estimate.postingBusinessDays} dia útil`;
+  $('estimateWindow').textContent=`${dateBr(estimate.earliestDate)} — ${dateBr(estimate.latestDate)}`;
+  $('estimateDisclaimer').textContent=estimate.disclaimer;
+  renderAddressOutputs();
+}
+
+async function lookupCep(){
+  const cep=onlyDigits($('cep').value); if(cep.length!==8){setError('Digite um CEP válido com 8 dígitos.');return;}
+  setLoading(true);setError('');
+  try{
+    const res=await fetch(`/api/cep/${cep}?orderDate=${encodeURIComponent($('orderDate').value)}`); const data=await res.json(); if(!res.ok)throw new Error(data.error||'Falha ao consultar CEP.');
+    $('cep').value=formatCep(data.address.cep);$('street').value=data.address.street;$('neighborhood').value=data.address.neighborhood;$('city').value=data.address.city;$('uf').value=data.address.uf;
+    $('addressPanel').classList.remove('hidden');state.manual=false;$('manualCalculate').classList.add('hidden');renderEstimate(data.estimate);toast('CEP localizado e prazo estimado calculado.');
+  }catch(e){setError(e.message);}finally{setLoading(false);}
+}
+
+async function manualCalculate(){
+  const city=$('city').value.trim(),uf=$('uf').value.trim().toUpperCase(); if(!city||uf.length!==2){setError('Informe cidade e UF para calcular o prazo.');return;}
+  setLoading(true);setError('');
+  try{
+    const res=await fetch('/api/shipping/estimate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({city,uf,orderDate:$('orderDate').value})}); const data=await res.json(); if(!res.ok)throw new Error(data.error||'Falha ao calcular prazo.');renderEstimate(data.estimate);toast('Prazo estimado calculado.');
+  }catch(e){setError(e.message);}finally{setLoading(false);}
+}
+
+function updateDeclaration(){
+  const name=titleCase($('buyerName').value),cpf=$('cpf').value,amount=$('amount').value;
+  const nameOk=name.length>=3,cpfOk=validCpf(cpf);$('nameError').classList.toggle('hidden',!$('buyerName').value||nameOk);$('cpfError').classList.toggle('hidden',!cpf||cpfOk);
+  const can=nameOk&&cpfOk;$('declarationEmpty').classList.toggle('hidden',can);$('declarationOutput').classList.toggle('hidden',!can);if(!can)return;
+  const valueLine=amount?` O valor acordado para o pedido é de ${amount}.`:'';
+  const warning=$('includeWarning').checked?'\n\n*Advertência*\nEsta confirmação registra a compra e a autorização para envio do pedido. O pagamento deverá ser realizado no ato do recebimento, conforme combinado no atendimento. Em caso de impossibilidade de recebimento, o cliente deve comunicar a operação assim que possível. Recusas injustificadas poderão impedir novas compras na modalidade de pagamento na entrega.':'';
+  $('declarationText').textContent=`*Declaração de Confirmação de Compra*\n\nEu, ${name}, portador(a) do CPF ${formatCpf(cpf)}, confirmo a compra do produto *MINOVITE*, comprometendo-me a realizar o pagamento no ato do recebimento, conforme as condições acordadas.${valueLine}${warning}\n\nPara confirmar, responda: *EU CONFIRMO A COMPRA DO MINOVITE*.`;
+}
+
+$('orderDate').value=todayIso();
+$('cep').addEventListener('input',e=>{e.target.value=formatCep(e.target.value)});$('cep').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lookupCep();}});$('lookupCep').addEventListener('click',lookupCep);
+$('manualMode').addEventListener('click',()=>{state.manual=true;setError('');$('addressPanel').classList.remove('hidden');$('manualCalculate').classList.remove('hidden');renderEstimate(null);$('street').focus();});$('manualCalculate').addEventListener('click',manualCalculate);
+['customerName','street','number','complement','neighborhood','reference'].forEach(id=>$(id).addEventListener('input',renderAddressOutputs));
+['city','uf'].forEach(id=>$(id).addEventListener('input',e=>{if(id==='uf')e.target.value=e.target.value.toUpperCase().slice(0,2);renderEstimate(null);if(state.manual)$('manualCalculate').classList.remove('hidden');}));
+$('orderDate').addEventListener('change',()=>renderEstimate(null));
+$('resetAddress').addEventListener('click',()=>{['customerName','cep','street','number','complement','neighborhood','city','uf','reference'].forEach(id=>$(id).value='');$('orderDate').value=todayIso();$('addressPanel').classList.add('hidden');$('manualCalculate').classList.add('hidden');setError('');state.manual=false;renderEstimate(null);});
+$('cpf').addEventListener('input',e=>{e.target.value=formatCpf(e.target.value);updateDeclaration();});$('buyerName').addEventListener('input',updateDeclaration);$('amount').addEventListener('input',e=>{e.target.value=moneyMask(e.target.value);updateDeclaration();});$('includeWarning').addEventListener('change',updateDeclaration);
+$('resetDeclaration').addEventListener('click',()=>{$('buyerName').value='';$('cpf').value='';$('amount').value='';$('includeWarning').checked=true;updateDeclaration();});
+
+document.addEventListener('click',async e=>{
+  const copy=e.target.closest('[data-copy-target]'); if(copy){const text=$(copy.dataset.copyTarget)?.textContent||'';if(!text)return;try{await copyText(text);toast('Texto copiado.');}catch{toast('Não foi possível copiar automaticamente.');}return;}
+  const wa=e.target.closest('[data-whatsapp-target]'); if(wa){const text=$(wa.dataset.whatsappTarget)?.textContent||'';if(text)window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener,noreferrer');}
+});
